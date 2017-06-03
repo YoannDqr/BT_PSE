@@ -214,8 +214,6 @@ void client(void *donnees)
             telecharger(donnes, donnes->tracker.fichier_dispo[donnes->tracker.meilleur_peer][k]);
         }
     }
-
-
 }
 
 int main(void)
