@@ -241,6 +241,7 @@ int main(void)
     }*/
     Client client;
     client.tracker.meilleur_peer = 0;
+    strcpy(client.tracker.nom_fichier, "fichier_test");
     strcpy(client.tracker.ip[0], "172.17.1.102");
 
     telecharger(&client, 1);

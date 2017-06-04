@@ -8,9 +8,7 @@ typedef struct
     char port[20];
     int canal;
     char buff[100];
-    char nom_fichier[200];
     int fd_fichier;
-    char fichier_part[200];
 }Server;
 
 void* worker (void *donnes);
@@ -18,12 +16,13 @@ void* worker (void *donnes);
 void* worker (void *donnes)
 {
     Server *server = (Server *)donnes;
-    sprintf(server->fichier_part, "%s%d.part", server->nom_fichier, 1);
-    printf("nom du fichier : %s\n", server->fichier_part);
-    server->fd_fichier = open(server->fichier_part, O_RDONLY);
+    lireLigne(server->canal, server->buff);
+    printf("%s\n", server->buff);
+    server->fd_fichier = open(server->buff, O_RDONLY);
     if(server->fd_fichier < 0)
     {
         perror("open");
+        close(server->canal);
         exit(EXIT_FAILURE);
     }
     while(lireLigne(server->fd_fichier, server->buff))
@@ -33,13 +32,12 @@ void* worker (void *donnes)
     }
     close(server->fd_fichier);
     close(server->canal);
-    pthread_exit(NULL);
+    return(NULL);
 }
 int main(int argc, char *argv[])
 {
     Server server;
     strcpy(server.port, "9091");
-    strcpy(server.nom_fichier, "fichier_test");
     server.socket = socket(AF_INET, SOCK_STREAM, 0);
     if(server.socket < 0)
     {
@@ -63,16 +61,19 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
     printf("listen ok\n");
+    server.len = sizeof(server.socket_client);
     while(1)
     {
-        server.len = sizeof(server.socket_client);
         server.canal = accept(server.socket, (struct sockaddr*)&server.socket_client, &server.len);
         if(server.canal == -1)
         {
+            printf("b\n");
             perror("accept");
             exit(EXIT_FAILURE);
         }
         printf("connect ok\n");
         worker(&server);
+        printf("a\n");
     }
+    exit(EXIT_SUCCESS);
 }
