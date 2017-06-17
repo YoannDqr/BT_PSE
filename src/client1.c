@@ -17,9 +17,10 @@ typedef struct
     int nb_ip; //nb de dépot total
     struct sockaddr_in *socket_serveur;
     int socket_client;
-    char port[10];
+    char port[20];
     int meilleur_peer;
     float *tableau_peer;
+	char chemin_serveur[1000]; //emplacement du fichier dans les serveur
     int var;
 }Tracker;
 
@@ -32,13 +33,14 @@ typedef struct
     int nb_fichier_local; //nombre des fichier en local
     char dossier_dl[200]; //dossier de téléchargement
     char var[2000]; //chaine de caractère variable
-    int fd_local; //fd contenant le fichier résumant les donné déjà téléchargé
+    FILE *fd_local; //fd contenant le fichier résumant les donné déjà téléchargé
     int indice;
     int taille_local;
     pthread_t tab_fichier_dl[100];
     int compteur_dl;
 	int connection;
 	int fd_fichier;
+	int k;
     Tracker tracker; //infos du tracker
 }Client;
 
@@ -58,7 +60,7 @@ void connection_socket(Client *client)
 	client->tracker.meilleur_peer = 0;
 	client->tracker.socket_client = socket(AF_INET,SOCK_STREAM,0);
 	//client->tracker.socket_serveur = resolv(client->tracker.ip[client->tracker.meilleur_peer], "9091");
-	client->tracker.socket_serveur = resolv("172.17.1.102", "9091");
+	client->tracker.socket_serveur = resolv(client->tracker.ip[client->tracker.meilleur_peer], "9091");
 	if(client->tracker.socket_client == -1 || client->tracker.socket_serveur == NULL)
 	{
 		perror("socket");
@@ -72,22 +74,18 @@ void connection_socket(Client *client)
 	}
 //################## Déportation de port############################################
 	lireLigne(client->tracker.socket_client, client->var);
-	printf("Déporté sur le port %s\n", client->var);
-
+	ecrireLigne(client->tracker.socket_client, "1\n");
 	client->tracker.socket_client = socket(AF_INET,SOCK_STREAM,0);
 	//client->tracker.socket_serveur = resolv(client->tracker.ip[client->tracker.meilleur_peer], "9091");
-	client->tracker.socket_serveur = resolv("172.17.1.102", client->var);
+	client->tracker.socket_serveur = resolv(client->tracker.ip[client->tracker.meilleur_peer], client->var);
 	if(client->tracker.socket_client == -1 || client->tracker.socket_serveur == NULL)
 	{
 		perror("socket");
 		exit(EXIT_FAILURE);
 	}
+	printf("port : %s\n", client->var);
 	client->connection = connect(client->tracker.socket_client, (struct sockaddr *)client->tracker.socket_serveur, sizeof(struct sockaddr_in));
-	if(client->connection < 0)
-	{
-		perror("connect");
-		exit(EXIT_FAILURE);
-	}
+	printf("Déporté sur le port %s\n", client->var);
 //###################################################################################
 }
 
@@ -107,42 +105,62 @@ int usee(int *tab_local,int *tab_server, int taille_local, int taille_server)
 void* telechargement(void* donnes)
 {
     Client *client = (Client *)donnes;
-    int k;
     info_tracker(client->fd_tracker, &client->tracker);
+	Client *tableau_dl = malloc(sizeof(Client) * 50); //dl de 100 blocks en meme temps uniquement
     //meilleur_peer(&client->tracker);
     recuperation_local(client);
     client->compteur_dl = 0;
     srand(time(NULL));
-    //while(client->taille_local != client->tracker.taille_fichier) //condition a modifier
-    //{
-		/*if(usee(client->fichier_local, client->tracker.ficheir_dispo[client->tracker.meilleur_peer], client->nb_fichier_local, client->tracker.nb_fichier[client->tracker.meilleur_peer]) == 0)
-			meilleur_peer(&client->tracker);*/
-        client->indice = rand()%client->tracker.nb_fichier[client->tracker.meilleur_peer];
-        while(est_dans(client->tracker.fichier_dispo[client->tracker.meilleur_peer][client->indice], client->fichier_local, client->nb_fichier_local))
-        {
-            client->indice = rand()%client->tracker.nb_fichier[client->tracker.meilleur_peer];
-        }
-        pthread_create(&client->tab_fichier_dl[client->compteur_dl], NULL, dl_fichier, client);
-        client->compteur_dl += 1;
-    //}
 
-    for(k = 0; k < client->compteur_dl; k++)
+    while(client->compteur_dl < client->tracker.taille_fichier/11) //condition a modifier
     {
-        pthread_join(client->tab_fichier_dl[k], NULL);
+		memcpy(&tableau_dl[client->compteur_dl], client, sizeof(Client));
+		/*if(usee(client->fichier_local, client->tracker.fichier_dispo[client->tracker.meilleur_peer], client->nb_fichier_local, client->tracker.nb_fichier[client->tracker.meilleur_peer]) == 0)
+			meilleur_peer(&client->tracker);*/
+        //tableau_dl[client->compteur_dl].indice = rand()%client->tracker.nb_fichier[client->tracker.meilleur_peer];
+		tableau_dl[client->compteur_dl].indice = client->compteur_dl + 1;
+        /*while(est_dans(client->tracker.fichier_dispo[client->tracker.meilleur_peer][client->indice], client->fichier_local, client->nb_fichier_local))
+        {
+            tableau_dl[client->compteur_dl].indice = rand()%client->tracker.nb_fichier[client->tracker.meilleur_peer];
+			printf("a\n");
+        }*/
+		tableau_dl[client->compteur_dl].indice = client->tracker.fichier_dispo[client->tracker.meilleur_peer][tableau_dl[client->compteur_dl].indice - 1];
+		connection_socket(&tableau_dl[client->compteur_dl]);
+        pthread_create(&client->tab_fichier_dl[client->compteur_dl], NULL, dl_fichier, &tableau_dl[client->compteur_dl]);
+		client->taille_local += 11;
+		sprintf(client->var, "%s%s.part", client->dossier_dl, client->tracker.nom_fichier);
+		client->fd_local = fopen(client->var, "a");
+		fprintf(client->fd_local, "%d\n", tableau_dl[client->compteur_dl].indice);
+		fclose(client->fd_local);
+
+
+		//client->fichier_local[client->nb_fichier_local] = client->tracker.fichier_dispo[client->tracker.meilleur_peer][client->indice];
+		client->nb_fichier_local += 1;
+        client->compteur_dl += 1;
+		printf("&&%d\n", client->compteur_dl);
     }
+	for(client->k = 0; client->k <= client->compteur_dl + 5; client->k++)
+	{
+		pthread_join(client->tab_fichier_dl[client->compteur_dl], NULL);
+	}
+	printf("&&b\n");
     pthread_exit(NULL);
 }
 
 void* dl_fichier(void* donnes)
 {
     Client *client = (Client*)donnes;
-	connection_socket(client);
-    sprintf(client->var, "%s%d.part", client->tracker.nom_fichier, client->tracker.fichier_dispo[client->tracker.meilleur_peer][client->indice]);
+	//sleep(3);
+    sprintf(client->var, "%s%s%d.part\n", client->tracker.chemin_serveur, client->tracker.nom_fichier, client->indice);
+	printf("*!!%d\n", client->indice);
     ecrireLigne(client->tracker.socket_client, client->var); //Envoie le fichier a dl
     lireLigne(client->tracker.socket_client, client->var); //Le fichier est-il présent dans le serveur ? 0 non 1 oui
 	printf("***** buff : %s\n", client->var);
-    if(strcmp(client->var, "0") == 0)
+    if(strcmp(client->var, "0\n") == 0)
+	{
+		printf("aaaapppp\n");
         pthread_exit(NULL);
+	}
 
 	sprintf(client->var, "%s%s%d.part", client->dossier_dl, client->tracker.nom_fichier, client->indice);
 	client->fd_fichier = open(client->var, O_TRUNC|O_WRONLY|O_CREAT, 0777);
@@ -154,28 +172,17 @@ void* dl_fichier(void* donnes)
 	lireLigne(client->tracker.socket_client, client->tracker.buff);
     while(strcmp(client->tracker.buff, "@@@@!!@!//785") != 0)
     {
-		printf("Il est ecris : %s \n", client->tracker.buff);
+		//printf("Il est ecris : %d \n", client->indice);
         ecrireLigne(client->fd_fichier, client->tracker.buff);
 		lireLigne(client->tracker.socket_client, client->tracker.buff);
     }
-    client->fichier_local[client->nb_fichier_local] = client->tracker.fichier_dispo[client->tracker.meilleur_peer][client->indice];
-    client->nb_fichier_local += 1;
+	ecrireLigne(client->tracker.socket_client, "1\n");
     //maj(client);
-    close(client->tracker.socket_client);
-    strcpy(client->var,client->tracker.nom_fichier);
-	sprintf(client->var, "%s%s.part", client->dossier_dl, client->tracker.nom_fichier);
-    client->fd_local = open(client->var, O_WRONLY|O_CREAT, 0777);
-    if(client->fd_local < 0)
-    {
-        perror("open");
-        exit(EXIT_FAILURE);
-    }
     sprintf(client->var, "%d\n", client->indice); //maj des fichiers locals
 	printf("Numero du fichier : %s", client->var);
-    ecrireLigne(client->fd_local, client->var);
-	client->taille_local += 11; //taille d'un ficheir split
-    close(client->fd_local);
+
 	close(client->fd_fichier);
+	printf("fichier %d fermé\n", client->indice);
     pthread_exit(NULL);
 }
 
@@ -195,17 +202,20 @@ int est_dans(int valeur, int *tableau_valeur, int taille_tableau)
 
 void recuperation_local(Client *client)
 {
-    strcpy(client->var,client->tracker.nom_fichier);
-    strcat(client->var, ".part");
-    client->fd_local = open(client->var, O_RDONLY);
+    sprintf(client->var, "%s%s.part", client->dossier_dl, client->tracker.nom_fichier);
+    client->fd_local = fopen(client->var, "r");
+	if(client->fd_local == NULL)
+	{
+		client->fd_local = fopen(client->var, "w");
+		fclose(client->fd_local);
+		client->fd_local = fopen(client->var, "r");
+	}
     client->tracker.var = 0;
 	client->taille_local = 0;
-    while(lireLigne(client->fd_local, client->var) && client->fd_local > 0)
-    {
-        client->fichier_local[client->tracker.var] = atoi(client->var);
+    while(fscanf(client->fd_local, "%d", &client->fichier_local[client->tracker.var]) > 0 && client->fd_local > 0)
         client->tracker.var += 1;
-    }
     client->nb_fichier_local = client->tracker.var;
+	fclose(client->fd_local);
 }
 
 void meilleur_peer(Tracker *tracker)
@@ -233,7 +243,7 @@ void meilleur_peer(Tracker *tracker)
 
         ecrireLigne(tracker->socket_client, tracker->nom_fichier);
         lireLigne(tracker->socket_client, tracker->buff);
-        tracker->tableau_peer[k] = atol(tracker->buff);
+        tracker->tableau_peer[k] = tracker->nb_fichier[k]/atol(tracker->buff);
     }
     tracker->var = tracker->tableau_peer[0];
     tracker->meilleur_peer = 0;
@@ -258,7 +268,8 @@ void info_tracker(int fd_tracker, Tracker *tracker)
 	strcpy(tracker->buff, "");
 	lireLigne(fd_tracker, tracker->buff);
 	tracker->taille_fichier = atoi(tracker->buff);
-    //printf("nom fichier : %s\n", tracker->buff);
+	printf("taille: fichier = %d\n", tracker->taille_fichier);
+    printf("nom fichier : %s\n", tracker->buff);
 
     while(strcmp(tracker->buff,"...") != 0)
     {
@@ -269,6 +280,9 @@ void info_tracker(int fd_tracker, Tracker *tracker)
 		//printf("ip : %s\n", tracker->buff);
         strcpy(tracker->ip[compteur], tracker->buff);
         strcpy(tracker->buff, "");
+		lireLigne(fd_tracker, tracker->buff);
+		strcpy(tracker->chemin_serveur, tracker->buff);
+		strcpy(tracker->buff, "");
 		lireLigne(fd_tracker, tracker->buff);
 		//printf("nombre de fichier : %s\n", tracker->buff);
 		tracker->nb_fichier[compteur] = atoi(tracker->buff);
@@ -289,7 +303,6 @@ void info_tracker(int fd_tracker, Tracker *tracker)
                 numero_fichier = 10*numero_fichier + (int)tracker->buff[k] - 48;
             }
         }
-        tracker->nb_fichier[compteur] = compteur_fichier;
         compteur += 1;
         lireLigne(fd_tracker, tracker->buff);
     }
@@ -335,5 +348,6 @@ int main(int argc, char *argv[])
     {
         pthread_join(tab_thread[k], NULL);
     }
+
     return EXIT_SUCCESS;
 }

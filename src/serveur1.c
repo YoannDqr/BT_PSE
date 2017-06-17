@@ -8,16 +8,14 @@ typedef struct
     int socket;             //port 9091
     int socket_donne;       //port 9090
     char port[20];          //9091
-    char port_donne[20];    //9090
     int canal;              //canal de dl
-    int canal_donne;        //canal de conversation donne
-    char buff[100];
+    char buff[2000];
     int fd_fichier;
-    char var[100];
+    char var[2000];
 }Server;
 
 void* upload(void *donnes);
-void donnes(Server *server);
+void up_donnes(Server *server);
 int est_dans(int valeur, int *tab_valeur, int taille_tab);
 
 int est_dans(int valeur, int *tab_valeur, int taille_tab)
@@ -30,44 +28,48 @@ int est_dans(int valeur, int *tab_valeur, int taille_tab)
     }
     return 0;
 }
-void donnes(Server *server)
+void up_donnes(Server *server)
 {
     lireLigne(server->canal, server->buff);
     server->fd_fichier = open(server->buff, O_RDONLY);
-    printf("fd_fichier = %d\n", server->fd_fichier);
+    printf("fichier_nom : %s\n fd_fichier = %d\n", server->buff, server->fd_fichier);
     if(server->fd_fichier < 0)
         ecrireLigne(server->canal, "0\n");
     else
     {
         ecrireLigne(server->canal, "1\n");
-        printf("a\n");
     }
 
-    while(lireLigne(server->fd_fichier, server->buff))
+    while(lireLigne(server->fd_fichier, server->buff) && server->fd_fichier > 0)
     {
         ecrireLigne(server->canal, server->buff);
         printf("Il est ecris : %s\n", server->buff);
     }
     ecrireLigne(server->canal, "@@@@!!@!//785\n");
+    lireLigne(server->canal, server->buff);
+    while(strcmp(server->buff, "1") != 0)
+        lireLigne(server->canal, server->buff);
+    printf("reponse client : %s\n", server->buff);
+    close(server->canal);
+
 }
 
 void* upload(void *donnees)
 {
-    Server *server = (Server*)donnees;
-    donnes(server);
-
+    up_donnes((Server*)donnees);
     pthread_exit(NULL);
 }
 
 int main(int argc, char *argv[])
 {
     Server server;
-    Server *tab_server = malloc(sizeof(Server) * 100);
+    int k;
+    Server *tab_server = malloc(sizeof(Server) * 1000);
     int compteur_thread = 0;
     strcpy(server.port, "9091");
     server.socket = socket(AF_INET, SOCK_STREAM, 0);
-    pthread_t *tab_thread = malloc(sizeof(pthread_t) * 100);
-    int *tab_port = malloc(sizeof(int) * 10);
+    pthread_t *tab_thread = malloc(sizeof(pthread_t) * 1000);
+    int *tab_port = malloc(sizeof(int) * 1000);
     int compteur_port = 0;
     srand(time(NULL));
     if(server.socket < 0)
@@ -86,7 +88,7 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
     printf("bind ok\n");
-    if(listen(server.socket, 20) != 0)
+    if(listen(server.socket, 20000) != 0)
     {
         perror("listen");
         exit(EXIT_FAILURE);
@@ -104,12 +106,11 @@ int main(int argc, char *argv[])
         }
 //###############################Deportage de port################################################
         do {
-            tab_port[compteur_port] = rand()%(9092-10100) + 9092;
+            //tab_port[compteur_port] = rand()%1000 + 9092;
+            tab_port[compteur_port] = 20001 + compteur_port;
         } while(est_dans(tab_port[compteur_port], tab_port, compteur_port) != 0);
         compteur_port += 1;
         sprintf(tab_server[compteur_thread].port,"%d\n", tab_port[compteur_port - 1]);
-        ecrireLigne(tab_server[compteur_thread].canal, tab_server[compteur_thread].port);
-        close(tab_server[compteur_thread].canal);
         tab_server[compteur_thread].socket = socket(AF_INET, SOCK_STREAM, 0);
         if(tab_server[compteur_thread].socket < 0)
         {
@@ -134,18 +135,27 @@ int main(int argc, char *argv[])
         }
         printf("**listen ok\n");
         tab_server[compteur_thread].len = sizeof(tab_server[compteur_thread].socket_client);
+        ecrireLigne(tab_server[compteur_thread].canal, tab_server[compteur_thread].port);
+        lireLigne(tab_server[compteur_thread].canal, tab_server[compteur_thread].buff);
+        printf("port : %s", tab_server[compteur_thread].port);
+        close(tab_server[compteur_thread].canal);
         tab_server[compteur_thread].canal = accept(tab_server[compteur_thread].socket, (struct sockaddr*)&tab_server[compteur_thread].socket_client, &tab_server[compteur_thread].len);
+        printf("%d test port\n", compteur_thread);
         if(tab_server[compteur_thread].canal == -1)
         {
-            printf("b\n");
             perror("accept");
             exit(EXIT_FAILURE);
         }
-        printf("**connect ok\n");
+        printf("**%d connect ok\n", compteur_thread);
 //################################Fin deportage de port################################################
         pthread_create(&tab_thread[compteur_thread], NULL, upload, &tab_server[compteur_thread]);
+        printf("compteur_thread: %d\n", compteur_thread);
         compteur_thread += 1;
-        pthread_join(tab_thread[compteur_thread - 1], NULL);
+    }
+
+    for(k = 0; k < compteur_thread; k++)
+    {
+        pthread_join(tab_thread[compteur_thread], NULL);
     }
     return(EXIT_SUCCESS);
 }
