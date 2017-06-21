@@ -2,7 +2,7 @@
 #
 include ../Makefile.inc
 
-EXE = client1 serveur1 FIFO serveur_info
+EXE = Client Serveur
 
 ${EXE): ${PSE_LIB}
 
